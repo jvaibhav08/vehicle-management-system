@@ -1050,11 +1050,25 @@ const updateInsurance = async (
         result
     };
 };
+// ======================================================
+// GET ALL ACTIVE INSURANCE POLICIES
+// ======================================================
+
+const getAllActiveInsurance = async (userId) => {
+
+    const policies =
+        await insuranceModel.getAllActiveInsurance(
+            userId
+        );
+
+    return policies;
+};
 
 
 module.exports = {
     addInsurance,
     getInsuranceByVehicleId,
     getInsuranceById,
-    updateInsurance
+    updateInsurance,
+    getAllActiveInsurance
 };

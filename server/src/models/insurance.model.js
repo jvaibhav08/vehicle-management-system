@@ -212,6 +212,42 @@ const deleteInsuranceById = async (insuranceId) => {
 };
 
 // ======================================================
+// GET ALL ACTIVE INSURANCE POLICIES FOR LOGGED-IN USER
+// ======================================================
+
+const getAllActiveInsurance = async (userId) => {
+
+    const [rows] = await db.query(
+        `SELECT
+            v.id AS vehicle_id,
+            v.vehicle_number,
+            v.vehicle_name,
+
+            i.id AS insurance_id,
+            i.insurance_company,
+            i.insurance_type,
+            i.policy_number,
+            i.expiry_date,
+            i.status
+
+        FROM vehicles v
+
+        INNER JOIN insurance i
+            ON v.id = i.vehicle_id
+
+        WHERE v.user_id = ?
+        AND i.status = 'active'
+
+        ORDER BY
+            v.id,
+            i.expiry_date DESC`,
+        [userId]
+    );
+
+    return rows;
+};
+
+// ======================================================
 // EXPORTS
 // ======================================================
 
@@ -223,5 +259,6 @@ module.exports = {
     updateInsurance,
     updateInsuranceStatus,
     deletePreviousInsurance,
-    deleteInsuranceById
+    deleteInsuranceById,
+    getAllActiveInsurance
 };

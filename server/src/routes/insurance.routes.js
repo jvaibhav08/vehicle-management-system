@@ -4,6 +4,7 @@ const { authenticateUser } = require("../middleware/auth.middleware");
 
 const {
     addInsurance,
+    getAllActiveInsurance,
     getInsuranceByVehicleId,
     getInsuranceById,
     updateInsurance
@@ -20,6 +21,16 @@ router.post(
     "/",
     authenticateUser,
     addInsurance
+);
+
+// ======================================================
+// GET - ALL ACTIVE INSURANCE POLICIES
+// ======================================================
+
+router.get(
+    "/",
+    authenticateUser,
+    getAllActiveInsurance
 );
 
 // GET single insurance policy by insurance ID

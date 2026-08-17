@@ -119,9 +119,36 @@ const updateInsurance = async (req, res, next) => {
     }
 };
 
+// ======================================================
+// GET ALL ACTIVE INSURANCE POLICIES
+// ======================================================
+
+const getAllActiveInsurance = async (req, res, next) => {
+
+    try {
+
+        const userId = req.user.id;
+
+        const insurance =
+            await insuranceService.getAllActiveInsurance(
+                userId
+            );
+
+        return res.status(200).json({
+            success: true,
+            message: "Active insurance records fetched successfully",
+            data: insurance
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     addInsurance,
     getInsuranceByVehicleId,
     getInsuranceById,
-    updateInsurance
+    updateInsurance,
+    getAllActiveInsurance
 };

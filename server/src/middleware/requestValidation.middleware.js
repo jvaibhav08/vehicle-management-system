@@ -134,7 +134,7 @@ const validateLogin = (req, res, next) => {
         rejectUnknownFields(body, ["email", "password", "trustedDeviceToken"]);
         body.email = requireString(body.email, "Email", 3, 254, EMAIL_PATTERN).toLowerCase();
         body.password = requireString(body.password, "Password", 6, 128);
-        if (body.trustedDeviceToken !== undefined) {
+        if (body.trustedDeviceToken !== undefined && body.trustedDeviceToken !== null) {
             body.trustedDeviceToken = requireString(body.trustedDeviceToken, "Trusted device token", 1, 4096);
         }
         next();

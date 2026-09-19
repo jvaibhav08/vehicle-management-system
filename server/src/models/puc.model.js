@@ -1,5 +1,27 @@
 const db = require("../config/db");
 
+let documentColumn;
+
+const getDocumentColumn = async () => {
+  if (documentColumn !== undefined) {
+    return documentColumn;
+  }
+
+  const [rows] = await db.execute(
+    "SHOW COLUMNS FROM puc WHERE Field IN ('certificate_file', 'document_path')"
+  );
+
+  documentColumn = rows.some((column) => column.Field === "document_path")
+    ? "document_path"
+    : rows.some((column) => column.Field === "certificate_file")
+      ? "certificate_file"
+      : null;
+
+  return documentColumn;
+};
+
+const hasDocumentPathColumn = async () => Boolean(await getDocumentColumn());
+
 // ======================================================
 // GET PUC BY VEHICLE ID
 // ======================================================
@@ -49,19 +71,22 @@ const getPucById = async (pucId) => {
 // ======================================================
 
 const addPuc = async (pucData) => {
+  const documentColumnName = await getDocumentColumn();
+  const includesDocumentPath = Boolean(documentColumnName);
   const query = `
     INSERT INTO puc (
       vehicle_id,
       certificate_number,
-      expiry_date
+      expiry_date${includesDocumentPath ? `,\n      ${documentColumnName}` : ""}
     )
-    VALUES (?, ?, ?)
+    VALUES (?, ?, ?${includesDocumentPath ? ", ?" : ""})
   `;
 
   const values = [
     pucData.vehicle_id,
     pucData.certificate_number,
     pucData.expiry_date,
+    ...(includesDocumentPath ? [pucData.document_path || null] : []),
   ];
 
   const [result] = await db.execute(
@@ -80,17 +105,26 @@ const updatePuc = async (
   vehicleId,
   pucData
 ) => {
+  const documentColumnName = await getDocumentColumn();
+  const includesDocumentPath = Object.hasOwn(pucData, "document_path") &&
+    Boolean(documentColumnName);
+  const documentUpdate = includesDocumentPath
+    ? `, ${documentColumnName} = ?`
+    : "";
   const query = `
     UPDATE puc
     SET
       certificate_number = ?,
-      expiry_date = ?
+      expiry_date = ?${documentUpdate}
     WHERE vehicle_id = ?
   `;
 
   const values = [
     pucData.certificate_number,
     pucData.expiry_date,
+    ...(includesDocumentPath
+      ? [pucData.document_path]
+      : []),
     vehicleId,
   ];
 
@@ -110,17 +144,26 @@ const updatePucById = async (
   pucId,
   pucData
 ) => {
+  const documentColumnName = await getDocumentColumn();
+  const includesDocumentPath = Object.hasOwn(pucData, "document_path") &&
+    Boolean(documentColumnName);
+  const documentUpdate = includesDocumentPath
+    ? `, ${documentColumnName} = ?`
+    : "";
   const query = `
     UPDATE puc
     SET
       certificate_number = ?,
-      expiry_date = ?
+      expiry_date = ?${documentUpdate}
     WHERE id = ?
   `;
 
   const values = [
     pucData.certificate_number,
     pucData.expiry_date,
+    ...(includesDocumentPath
+      ? [pucData.document_path]
+      : []),
     pucId,
   ];
 
@@ -137,6 +180,10 @@ const updatePucById = async (
 // ======================================================
 
 const getAllPuc = async (userId) => {
+  const documentColumnName = await getDocumentColumn();
+  const documentPathSelect = documentColumnName
+    ? `p.${documentColumnName} AS document_path`
+    : "NULL AS document_path";
   const query = `
     SELECT
       v.id AS vehicle_id,
@@ -146,6 +193,7 @@ const getAllPuc = async (userId) => {
       p.id AS puc_id,
       p.certificate_number,
       p.expiry_date,
+      ${documentPathSelect},
       p.created_at,
       p.updated_at
 
@@ -172,6 +220,8 @@ const getAllPuc = async (userId) => {
 module.exports = {
   getPucByVehicleId,
   getPucById,
+  getDocumentColumn,
+  hasDocumentPathColumn,
   addPuc,
   updatePuc,
   updatePucById,

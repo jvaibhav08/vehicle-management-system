@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useNavigate,
   useSearchParams,
@@ -34,6 +34,11 @@ function PUC() {
 
   const [loading, setLoading] =
     useState(true);
+
+  const [recentlyViewedVehicleId, setRecentlyViewedVehicleId] =
+    useState(() => sessionStorage.getItem("recentlyViewedPucVehicleId"));
+
+  const recentlyViewedRowRef = useRef(null);
 
   // ======================================================
   // FETCH PUC RECORDS
@@ -73,6 +78,16 @@ function PUC() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const openVehiclePuc = (vehicleId, destination) => {
+    const selectedVehicleId = String(vehicleId);
+    sessionStorage.setItem(
+      "recentlyViewedPucVehicleId",
+      selectedVehicleId
+    );
+    setRecentlyViewedVehicleId(selectedVehicleId);
+    navigate(destination);
   };
 
   // ======================================================
@@ -261,6 +276,19 @@ function PUC() {
     searchTerm,
     statusFilter,
   ]);
+
+  useEffect(() => {
+    if (
+      !loading &&
+      recentlyViewedVehicleId &&
+      recentlyViewedRowRef.current
+    ) {
+      recentlyViewedRowRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [loading, recentlyViewedVehicleId, filteredRecords]);
 
   // ======================================================
   // CLEAR STATUS FILTER
@@ -483,7 +511,17 @@ function PUC() {
                       key={
                         record.vehicle_id
                       }
-                      className="border-b border-gray-50 last:border-0 hover:bg-emerald-50/30"
+                      ref={
+                        String(record.vehicle_id) ===
+                        String(recentlyViewedVehicleId)
+                          ? recentlyViewedRowRef
+                          : null
+                      }
+                      className={`border-b border-gray-50 last:border-0 hover:bg-emerald-50/30 ${
+                        String(record.vehicle_id) === String(recentlyViewedVehicleId)
+                          ? "bg-emerald-50/50"
+                          : ""
+                      }`}
                     >
 
                       {/* Vehicle */}
@@ -503,6 +541,12 @@ function PUC() {
                                 record.vehicle_number
                               }
                             </p>
+
+                            {String(record.vehicle_id) === String(recentlyViewedVehicleId) && (
+                              <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                Recently viewed
+                              </span>
+                            )}
 
                             <p className="text-xs text-gray-400">
                               {
@@ -563,7 +607,8 @@ function PUC() {
                             <button
                               type="button"
                               onClick={() =>
-                                navigate(
+                                openVehiclePuc(
+                                  record.vehicle_id,
                                   `/puc/edit/${record.puc_id}`
                                 )
                               }
@@ -581,7 +626,8 @@ function PUC() {
                           <button
                             type="button"
                             onClick={() =>
-                              navigate(
+                              openVehiclePuc(
+                                record.vehicle_id,
                                 `/puc/details/${record.vehicle_id}`
                               )
                             }

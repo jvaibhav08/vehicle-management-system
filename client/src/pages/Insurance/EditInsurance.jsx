@@ -4,11 +4,13 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { ArrowLeft, Lock, ShieldCheck } from "lucide-react";
+import { ArrowLeft, FileText, Lock, ShieldCheck, Trash2 } from "lucide-react";
 
 import {
   getInsuranceByVehicleId,
   updateInsurance,
+  replaceInsurancePolicyDocument,
+  deleteInsurancePolicyDocument,
 } from "../../services/insurance.service";
 
 import { getVehicles } from "../../services/vehicle.service";
@@ -38,6 +40,8 @@ function EditInsurance() {
   });
 
   const [errors, setErrors] = useState({});
+  const [policyDocument, setPolicyDocument] = useState(null);
+  const [isUpdatingDocument, setIsUpdatingDocument] = useState(false);
 
   // ======================================================
   // FETCH VEHICLE + ACTIVE POLICIES
@@ -158,6 +162,7 @@ function EditInsurance() {
     });
 
     setErrors({});
+    setPolicyDocument(null);
   };
 
   // ======================================================
@@ -211,6 +216,67 @@ function EditInsurance() {
       ...previous,
       coverage: "",
     }));
+  };
+
+  const handlePolicyDocumentChange = (e) => {
+    const document = e.target.files?.[0] || null;
+    if (!document) return setPolicyDocument(null);
+
+    const extension = `.${document.name.split(".").pop()?.toLowerCase()}`;
+    if (![".pdf", ".doc", ".docx"].includes(extension) || document.size > 5 * 1024 * 1024) {
+      setErrors((previous) => ({
+        ...previous,
+        document: ![".pdf", ".doc", ".docx"].includes(extension)
+          ? "Upload a PDF, DOC, or DOCX document"
+          : "Document must be 5 MB or smaller",
+      }));
+      e.target.value = "";
+      return;
+    }
+
+    setPolicyDocument(document);
+    setErrors((previous) => ({ ...previous, document: "" }));
+  };
+
+  const refreshSelectedPolicy = (updatedPolicy) => {
+    setPolicies((previous) => previous.map((policy) =>
+      String(policy.id) === String(updatedPolicy.id) ? updatedPolicy : policy
+    ));
+  };
+
+  const handleReplaceDocument = async () => {
+    if (!selectedPolicyId || !policyDocument) return;
+    try {
+      setIsUpdatingDocument(true);
+      const response = await replaceInsurancePolicyDocument(selectedPolicyId, policyDocument);
+      if (response.success) {
+        refreshSelectedPolicy(response.data);
+        setPolicyDocument(null);
+        showToast(response.message, "success");
+      }
+    } catch (error) {
+      showToast(error.response?.data?.message || "Failed to update policy document", "error");
+    } finally {
+      setIsUpdatingDocument(false);
+    }
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!selectedPolicyId) return;
+    try {
+      setIsUpdatingDocument(true);
+      const response = await deleteInsurancePolicyDocument(selectedPolicyId);
+      if (response.success) {
+        setPolicies((previous) => previous.map((policy) =>
+          String(policy.id) === String(selectedPolicyId) ? { ...policy, policy_path: null, policy_name: null } : policy
+        ));
+        showToast(response.message, "success");
+      }
+    } catch (error) {
+      showToast(error.response?.data?.message || "Failed to delete policy document", "error");
+    } finally {
+      setIsUpdatingDocument(false);
+    }
   };
 
   // ======================================================
@@ -711,6 +777,38 @@ function EditInsurance() {
             </div>
           </div>
 
+          <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Policy Document <span className="text-gray-400">(Optional)</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600 transition hover:border-emerald-400 hover:bg-emerald-50/50">
+                <FileText size={20} className="text-emerald-600" />
+                <span className="min-w-0 flex-1 truncate">{policyDocument ? policyDocument.name : "Choose PDF, DOC, or DOCX (max 5 MB)"}</span>
+                <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handlePolicyDocumentChange} disabled={isUpdatingDocument} className="sr-only" />
+              </label>
+              {errors.document && <p className="mt-2 text-xs text-red-500">{errors.document}</p>}
+              {policyDocument && (
+                <p className="mt-2 text-xs font-medium text-amber-600">
+                  A new file has been selected. Please click Upload & Replace before updating insurance details.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Current Policy Document</label>
+              {policies.find((policy) => String(policy.id) === String(selectedPolicyId))?.policy_path ? (
+                <div className="flex min-h-[52px] items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                  <span className="min-w-0 flex-1 truncate text-sm text-gray-600">
+                    {policies.find((policy) => String(policy.id) === String(selectedPolicyId))?.policy_name || "Uploaded policy document"}
+                  </span>
+                  <button type="button" onClick={handleDeleteDocument} disabled={isUpdatingDocument} className="flex cursor-pointer items-center gap-1 text-sm font-semibold text-red-600 disabled:opacity-60"><Trash2 size={16} /> Delete</button>
+                </div>
+              ) : <p className="pt-3 text-sm text-gray-400">No policy document uploaded.</p>}
+              {policyDocument && <button type="button" onClick={handleReplaceDocument} disabled={isUpdatingDocument} className="mt-2 cursor-pointer text-sm font-semibold text-emerald-700 disabled:opacity-60">{isUpdatingDocument ? "Uploading..." : "Upload & Replace"}</button>}
+            </div>
+          </div>
+
           {/* ACTIONS */}
 
           <div className="mt-8 flex items-center justify-end gap-3 border-t border-gray-100 pt-6">
@@ -726,7 +824,7 @@ function EditInsurance() {
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || Boolean(policyDocument)}
               className="cursor-pointer rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:from-emerald-600 hover:to-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting

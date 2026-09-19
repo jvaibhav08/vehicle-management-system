@@ -1,5 +1,5 @@
 import { useToast } from "../../context/ToastContext";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
@@ -20,6 +20,17 @@ import {
 function Vehicles() {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [recentlyAddedVehicleId] = useState(() =>
+    sessionStorage.getItem("recentlyAddedVehicleId")
+  );
+
+  const [recentlyViewedVehicleId, setRecentlyViewedVehicleId] =
+    useState(() =>
+      sessionStorage.getItem("recentlyViewedVehicleId")
+    );
+
+  const recentlyViewedRowRef = useRef(null);
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -141,6 +152,29 @@ function Vehicles() {
 
       return 0;
     });
+
+  const openVehicle = (vehicleId, destination) => {
+    const selectedVehicleId = String(vehicleId);
+    sessionStorage.setItem(
+      "recentlyViewedVehicleId",
+      selectedVehicleId
+    );
+    setRecentlyViewedVehicleId(selectedVehicleId);
+    navigate(destination);
+  };
+
+  useEffect(() => {
+    if (
+      !loading &&
+      recentlyViewedVehicleId &&
+      recentlyViewedRowRef.current
+    ) {
+      recentlyViewedRowRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [loading, recentlyViewedVehicleId, vehicles, rcStatusFilter]);
 
   // ======================================================
   // CLEAR RC FILTER
@@ -390,7 +424,17 @@ function Vehicles() {
 
                       <tr
                         key={vehicle.id}
-                        className="border-b border-gray-50 last:border-0 hover:bg-emerald-50/30"
+                        ref={
+                          String(vehicle.id) ===
+                          String(recentlyViewedVehicleId)
+                            ? recentlyViewedRowRef
+                            : null
+                        }
+                        className={`border-b border-gray-50 last:border-0 hover:bg-emerald-50/30 ${
+                          String(vehicle.id) === String(recentlyViewedVehicleId)
+                            ? "bg-emerald-50/50"
+                            : ""
+                        }`}
                       >
 
                         {/* Vehicle */}
@@ -408,6 +452,18 @@ function Vehicles() {
                               <p className="text-sm font-semibold text-gray-800">
                                 {vehicle.vehicle_number}
                               </p>
+
+                              {String(vehicle.id) === String(recentlyAddedVehicleId) && (
+                                <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                  Recently added
+                                </span>
+                              )}
+
+                              {String(vehicle.id) === String(recentlyViewedVehicleId) && (
+                                <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                  Recently viewed
+                                </span>
+                              )}
 
                               <p className="text-xs text-gray-400">
                                 {vehicle.vehicle_name ||
@@ -472,7 +528,8 @@ function Vehicles() {
                             <button
                               type="button"
                               onClick={() =>
-                                navigate(
+                                openVehicle(
+                                  vehicle.id,
                                   `/vehicles/edit/${vehicle.id}`
                                 )
                               }

@@ -1,4 +1,8 @@
 const pucService = require("../services/puc.service");
+const {
+    getDocumentReference,
+    removeUploadedFile
+} = require("../middleware/pucDocument.middleware");
 
 const addPuc = async (req, res, next) => {
 
@@ -8,7 +12,8 @@ const addPuc = async (req, res, next) => {
 
         const result = await pucService.addPuc(
             pucData,
-            userId
+            userId,
+            getDocumentReference(req.file, userId)
         );
 
         // First-time PUC
@@ -16,7 +21,7 @@ const addPuc = async (req, res, next) => {
             return res.status(201).json({
                 success: true,
                 message: "PUC certificate added successfully",
-                data: result.result
+                data: result.puc || result.result
             });
         }
 
@@ -24,11 +29,12 @@ const addPuc = async (req, res, next) => {
         return res.status(200).json({
             success: true,
             message: "PUC certificate renewed successfully",
-            data: result.result
+            data: result.puc || result.result
         });
         
 
     } catch (error) {
+        await removeUploadedFile(req.file);
         next(error);
     }
 };
@@ -96,16 +102,18 @@ const updatePuc = async (req, res, next) => {
         const result = await pucService.updatePuc(
             pucId,
             pucData,
-            userId
+            userId,
+            getDocumentReference(req.file, userId)
         );
 
         return res.status(200).json({
             success: true,
             message: "PUC certificate updated successfully",
-            data: result
+            data: result.puc || result
         });
 
     } catch (error) {
+        await removeUploadedFile(req.file);
         next(error);
     }
 };
@@ -129,11 +137,45 @@ const getAllPuc = async (req, res, next) => {
     }
 };
 
+const getPucDocument = async (req, res, next) => {
+
+    try {
+        const document = await pucService.getPucDocument(
+            req.params.pucId,
+            req.user.id
+        );
+
+        return res.download(document.absolutePath, document.downloadName);
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+const deletePucDocument = async (req, res, next) => {
+
+    try {
+        await pucService.deletePucDocument(
+            req.params.pucId,
+            req.user.id
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "PUC document deleted successfully"
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
 
 module.exports = {
     addPuc,
     getPuc,
     getPucById,
     updatePuc,
-    getAllPuc
+    getAllPuc,
+    getPucDocument,
+    deletePucDocument
 };

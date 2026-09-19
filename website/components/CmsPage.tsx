@@ -1,0 +1,3 @@
+import { RichContent } from "./Content";
+import { getPage } from "@/sanity/lib/queries";
+export async function CmsPage({slug,fallbackTitle,fallbackText}:{slug:string;fallbackTitle:string;fallbackText:string}){const page=await getPage(slug);return <main><section className="page-hero"><div className="shell"><h1>{page?.title||fallbackTitle}</h1><p>{page?.intro||fallbackText}</p></div></section><section className="section"><div className="article" style={{paddingTop:0,paddingBottom:0}}>{page?.content?.length?<RichContent value={page.content}/>:<div className="prose"><p>{fallbackText}</p><p>This page can be maintained in Sanity through the <strong>Page</strong> document type using the slug <code>{slug}</code>.</p></div>}</div></section></main>}

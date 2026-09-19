@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   Car,
   FileCheck,
+  FileText,
+  Download,
   CalendarDays,
   Pencil,
   Plus,
@@ -12,7 +14,10 @@ import {
 } from "lucide-react";
 
 import { useToast } from "../../context/ToastContext";
-import { getAllPuc } from "../../services/puc.service";
+import {
+  getAllPuc,
+  getPucDocument,
+} from "../../services/puc.service";
 
 function PucDetails() {
   const navigate = useNavigate();
@@ -117,6 +122,21 @@ function PucDetails() {
     navigate(
       `/puc/edit/${vehicle.puc_id}`
     );
+  };
+
+  const handleViewDocument = async () => {
+    try {
+      const document = await getPucDocument(vehicle.puc_id);
+      const documentUrl = URL.createObjectURL(document);
+
+      window.open(documentUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(documentUrl), 60000);
+    } catch (error) {
+      showToast(
+        error.response?.data?.message || "Failed to open PUC document",
+        "error"
+      );
+    }
   };
 
   // ======================================================
@@ -343,6 +363,44 @@ function PucDetails() {
               {vehicle.vehicle_name ||
                 "Unnamed Vehicle"}
             </p>
+
+          </div>
+
+          {/* ==================================================
+              DOCUMENT
+          ================================================== */}
+
+          <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-5">
+
+            <div className="mb-3 flex items-center gap-2">
+
+              <FileText
+                size={18}
+                className="text-emerald-600"
+              />
+
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                PUC Document
+              </p>
+
+            </div>
+
+            {vehicle.document_path ? (
+              <button
+                type="button"
+                onClick={handleViewDocument}
+                className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-emerald-700 transition hover:text-emerald-800 active:scale-95"
+              >
+                <Download size={16} />
+                {vehicle.document_name
+                  ? `View / Download: ${vehicle.document_name}`
+                  : "View / Download document"}
+              </button>
+            ) : (
+              <p className="text-sm text-gray-400">
+                No document uploaded.
+              </p>
+            )}
 
           </div>
 

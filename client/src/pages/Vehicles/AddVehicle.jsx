@@ -20,6 +20,13 @@ function AddVehicle() {
       const response = await addVehicle(data);
 
       if (response.success) {
+        if (response.data?.insertId) {
+          sessionStorage.setItem(
+            "recentlyAddedVehicleId",
+            String(response.data.insertId)
+          );
+        }
+
         showToast(
           "Vehicle added successfully",
           "success"

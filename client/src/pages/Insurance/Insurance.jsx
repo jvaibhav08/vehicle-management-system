@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useNavigate,
   useSearchParams,
@@ -37,6 +37,11 @@ function Insurance() {
 
   const [loading, setLoading] =
     useState(true);
+
+  const [recentlyViewedVehicleId, setRecentlyViewedVehicleId] =
+    useState(() => sessionStorage.getItem("recentlyViewedInsuranceVehicleId"));
+
+  const recentlyViewedRowRef = useRef(null);
 
   // ======================================================
   // FETCH VEHICLES + ACTIVE INSURANCE
@@ -98,6 +103,16 @@ function Insurance() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const openVehicleInsurance = (vehicleId, destination) => {
+    const selectedVehicleId = String(vehicleId);
+    sessionStorage.setItem(
+      "recentlyViewedInsuranceVehicleId",
+      selectedVehicleId
+    );
+    setRecentlyViewedVehicleId(selectedVehicleId);
+    navigate(destination);
   };
 
   // ======================================================
@@ -515,6 +530,19 @@ function Insurance() {
     searchTerm,
   ]);
 
+  useEffect(() => {
+    if (
+      !loading &&
+      recentlyViewedVehicleId &&
+      recentlyViewedRowRef.current
+    ) {
+      recentlyViewedRowRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [loading, recentlyViewedVehicleId, filteredVehicles]);
+
   // ======================================================
   // CLEAR STATUS FILTER
   // ======================================================
@@ -768,7 +796,17 @@ function Insurance() {
                         key={
                           vehicle.vehicle_id
                         }
-                        className="border-b border-gray-100 last:border-0"
+                        ref={
+                          String(vehicle.vehicle_id) ===
+                          String(recentlyViewedVehicleId)
+                            ? recentlyViewedRowRef
+                            : null
+                        }
+                        className={`border-b border-gray-100 last:border-0 ${
+                          String(vehicle.vehicle_id) === String(recentlyViewedVehicleId)
+                            ? "bg-emerald-50/50"
+                            : ""
+                        }`}
                       >
 
                         {/* ==================================================
@@ -790,6 +828,12 @@ function Insurance() {
                                   vehicle.vehicle_number
                                 }
                               </p>
+
+                              {String(vehicle.vehicle_id) === String(recentlyViewedVehicleId) && (
+                                <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                  Recently viewed
+                                </span>
+                              )}
 
                               <p className="text-xs text-gray-400">
                                 {
@@ -955,7 +999,8 @@ function Insurance() {
                               <button
                                 type="button"
                                 onClick={() =>
-                                  navigate(
+                                  openVehicleInsurance(
+                                    vehicle.vehicle_id,
                                     `/insurance/edit/${vehicle.vehicle_id}`
                                   )
                                 }
@@ -972,7 +1017,8 @@ function Insurance() {
                             <button
                               type="button"
                               onClick={() =>
-                                navigate(
+                                openVehicleInsurance(
+                                  vehicle.vehicle_id,
                                   `/insurance/details/${vehicle.vehicle_id}`
                                 )
                               }

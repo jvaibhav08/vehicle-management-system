@@ -7,74 +7,119 @@ import {
 
 const AuthContext = createContext();
 
+const getStorage = (rememberMe) =>
+  rememberMe ? localStorage : sessionStorage;
+
+const getStoredSession = () => {
+  for (const storage of [localStorage, sessionStorage]) {
+    const token = storage.getItem("token");
+    const user = storage.getItem("user");
+
+    if (token && user) {
+      return { token, user };
+    }
+  }
+
+  return null;
+};
+
+const clearSession = () => {
+  for (const storage of [localStorage, sessionStorage]) {
+    storage.removeItem("token");
+    storage.removeItem("user");
+  }
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(
-    localStorage.getItem("token")
-  );
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("token");
-    const storedUser = localStorage.getItem("user");
+    const session = getStoredSession();
 
-    if (!storedToken || !storedUser) {
-      setUser(null);
-      setToken(null);
+    if (!session) {
       setLoading(false);
       return;
     }
 
     try {
-      // JWT structure:
-      // header.payload.signature
       const payload = JSON.parse(
-        atob(storedToken.split(".")[1])
+        atob(session.token.split(".")[1])
       );
-
-      // exp is in seconds, Date.now() is milliseconds
       const isExpired =
         payload.exp &&
         payload.exp * 1000 <= Date.now();
 
       if (isExpired) {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-
-        setUser(null);
-        setToken(null);
+        clearSession();
       } else {
-        setUser(JSON.parse(storedUser));
-        setToken(storedToken);
+        setUser(JSON.parse(session.user));
+        setToken(session.token);
       }
     } catch (error) {
       console.error("Invalid authentication data:", error);
-
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-
-      setUser(null);
-      setToken(null);
+      clearSession();
     }
 
     setLoading(false);
   }, []);
 
-  const login = (userData, jwtToken) => {
-    localStorage.setItem("token", jwtToken);
-    localStorage.setItem(
-      "user",
-      JSON.stringify(userData)
-    );
+  useEffect(() => {
+    if (!token) {
+      return undefined;
+    }
+
+    try {
+      const { exp } = JSON.parse(atob(token.split(".")[1]));
+      const delay = exp * 1000 - Date.now();
+
+      if (delay <= 0) {
+        clearSession();
+        setUser(null);
+        setToken(null);
+        return undefined;
+      }
+
+      const timeoutId = window.setTimeout(() => {
+        clearSession();
+        setUser(null);
+        setToken(null);
+      }, delay);
+
+      return () => window.clearTimeout(timeoutId);
+    } catch (error) {
+      clearSession();
+      setUser(null);
+      setToken(null);
+      return undefined;
+    }
+  }, [token]);
+
+  const login = (
+    userData,
+    jwtToken,
+    { rememberMe = false, trustedDeviceToken } = {}
+  ) => {
+    const storage = getStorage(rememberMe);
+
+    clearSession();
+    storage.setItem("token", jwtToken);
+    storage.setItem("user", JSON.stringify(userData));
+
+    if (trustedDeviceToken) {
+      storage.setItem("trustedDeviceToken", trustedDeviceToken);
+    }
 
     setUser(userData);
     setToken(jwtToken);
   };
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+  const getTrustedDeviceToken = (rememberMe) =>
+    getStorage(rememberMe).getItem("trustedDeviceToken");
 
+  const logout = () => {
+    clearSession();
     setUser(null);
     setToken(null);
   };
@@ -87,6 +132,7 @@ export function AuthProvider({ children }) {
         loading,
         login,
         logout,
+        getTrustedDeviceToken,
         isAuthenticated: !!token,
       }}
     >

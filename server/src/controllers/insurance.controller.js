@@ -1,22 +1,51 @@
 const insuranceService = require("../services/insurance.service");
+const {
+    getDocumentReference,
+    removeUploadedFile
+} = require("../middleware/insuranceDocument.middleware");
 
 const addInsurance = async (req, res, next) => {
     try {
-        const insuranceData = req.body;
+        const insuranceData = {
+            ...req.body,
+            covers_own_damage: req.body.covers_own_damage === "true"
+                ? true
+                : req.body.covers_own_damage === "false"
+                    ? false
+                    : req.body.covers_own_damage,
+            covers_third_party: req.body.covers_third_party === "true"
+                ? true
+                : req.body.covers_third_party === "false"
+                    ? false
+                    : req.body.covers_third_party
+        };
         const userId = req.user.id;
+        const policyFile = req.file;
 
         const result = await insuranceService.addInsurance(
             insuranceData,
-            userId
+            userId,
+            getDocumentReference(policyFile, userId)
         );
+
+        const insurance = result.result?.insertId
+            ? await insuranceService.getInsuranceById(
+                result.result.insertId,
+                userId
+            )
+            : null;
 
         return res.status(201).json({
             success: true,
             message: "Insurance added successfully",
-            data: result
+            data: {
+                ...result,
+                ...(insurance || {}),
+                insurance
+            }
         });
-
     } catch (error) {
+        await removeUploadedFile(req.file);
         next(error);
     }
 };
@@ -26,9 +55,7 @@ const addInsurance = async (req, res, next) => {
 // ======================================================
 
 const getInsuranceByVehicleId = async (req, res, next) => {
-
     try {
-
         // Get vehicle ID from URL
         const vehicleId = req.params.vehicleId;
 
@@ -48,19 +75,17 @@ const getInsuranceByVehicleId = async (req, res, next) => {
             message: "Insurance fetched successfully",
             data: insurance
         });
-
     } catch (error) {
         next(error);
     }
 };
+
 // ======================================================
 // GET SINGLE INSURANCE POLICY
 // ======================================================
 
 const getInsuranceById = async (req, res, next) => {
-
     try {
-
         // Insurance ID from URL
         const insuranceId = req.params.insuranceId;
 
@@ -79,19 +104,17 @@ const getInsuranceById = async (req, res, next) => {
             message: "Insurance policy fetched successfully",
             data: insurance
         });
-
     } catch (error) {
         next(error);
     }
 };
+
 // ======================================================
 // UPDATE INSURANCE
 // ======================================================
 
 const updateInsurance = async (req, res, next) => {
-
     try {
-
         // Insurance ID from URL
         const insuranceId = req.params.insuranceId;
 
@@ -113,7 +136,6 @@ const updateInsurance = async (req, res, next) => {
             message: "Insurance updated successfully",
             data: result
         });
-
     } catch (error) {
         next(error);
     }
@@ -124,9 +146,7 @@ const updateInsurance = async (req, res, next) => {
 // ======================================================
 
 const getAllActiveInsurance = async (req, res, next) => {
-
     try {
-
         const userId = req.user.id;
 
         const insurance =
@@ -139,7 +159,38 @@ const getAllActiveInsurance = async (req, res, next) => {
             message: "Active insurance records fetched successfully",
             data: insurance
         });
+    } catch (error) {
+        next(error);
+    }
+};
 
+const getInsurancePolicyDocument = async (req, res, next) => {
+    try {
+        const document = await insuranceService.getInsurancePolicyDocument(req.params.insuranceId, req.user.id);
+        return res.download(document.absolutePath, document.downloadName);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const replaceInsurancePolicyDocument = async (req, res, next) => {
+    try {
+        const policy = await insuranceService.replaceInsurancePolicyDocument(
+            req.params.insuranceId,
+            req.user.id,
+            getDocumentReference(req.file, req.user.id)
+        );
+        return res.status(200).json({ success: true, message: "Insurance policy document updated successfully", data: policy });
+    } catch (error) {
+        await removeUploadedFile(req.file);
+        next(error);
+    }
+};
+
+const deleteInsurancePolicyDocument = async (req, res, next) => {
+    try {
+        await insuranceService.deleteInsurancePolicyDocument(req.params.insuranceId, req.user.id);
+        return res.status(200).json({ success: true, message: "Insurance policy document deleted successfully" });
     } catch (error) {
         next(error);
     }
@@ -150,5 +201,8 @@ module.exports = {
     getInsuranceByVehicleId,
     getInsuranceById,
     updateInsurance,
-    getAllActiveInsurance
+    getAllActiveInsurance,
+    getInsurancePolicyDocument,
+    replaceInsurancePolicyDocument,
+    deleteInsurancePolicyDocument
 };

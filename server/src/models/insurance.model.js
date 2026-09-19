@@ -1,12 +1,10 @@
 const db = require("../config/db");
 
-
 // ======================================================
 // GET ACTIVE INSURANCE POLICIES
 // ======================================================
 
 const getActiveInsuranceByVehicleId = async (vehicleId) => {
-
     const [rows] = await db.query(
         `SELECT *
          FROM insurance
@@ -18,24 +16,22 @@ const getActiveInsuranceByVehicleId = async (vehicleId) => {
     return rows;
 };
 
-
 // ======================================================
 // ADD NEW INSURANCE
 // ======================================================
 
 const addInsurance = async (insuranceData) => {
-
     const {
         vehicle_id,
         insurance_type,
         insurance_company,
         policy_number,
         expiry_date,
-        status
+        status,
+        policy_path
     } = insuranceData;
 
     try {
-
         const [result] = await db.query(
             `INSERT INTO insurance
             (
@@ -44,23 +40,23 @@ const addInsurance = async (insuranceData) => {
                 insurance_company,
                 policy_number,
                 expiry_date,
-                status
+                status,
+                policy_path
             )
-            VALUES (?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
                 vehicle_id,
                 insurance_type,
                 insurance_company,
                 policy_number,
                 expiry_date,
-                status
+                status,
+                policy_path || null
             ]
         );
 
         return result;
-
     } catch (error) {
-
         if (error.code === "ER_DUP_ENTRY") {
             error.statusCode = 409;
             error.message = "Insurance policy number already exists";
@@ -70,7 +66,6 @@ const addInsurance = async (insuranceData) => {
     }
 };
 
-
 // ======================================================
 // UPDATE INSURANCE STATUS
 // ======================================================
@@ -79,7 +74,6 @@ const updateInsuranceStatus = async (
     insuranceId,
     status
 ) => {
-
     const [result] = await db.query(
         `UPDATE insurance
          SET status = ?
@@ -90,7 +84,6 @@ const updateInsuranceStatus = async (
     return result;
 };
 
-
 // ======================================================
 // DELETE OLD PREVIOUS INSURANCE
 // ======================================================
@@ -99,7 +92,6 @@ const deletePreviousInsurance = async (
     vehicleId,
     insuranceType
 ) => {
-
     const [result] = await db.query(
         `DELETE FROM insurance
          WHERE vehicle_id = ?
@@ -116,7 +108,6 @@ const deletePreviousInsurance = async (
 // ======================================================
 
 const getInsuranceByVehicleId = async (vehicleId) => {
-
     const [rows] = await db.query(
         `SELECT *
          FROM insurance
@@ -132,44 +123,43 @@ const getInsuranceByVehicleId = async (vehicleId) => {
 // UPDATE INSURANCE DETAILS
 // ======================================================
 
-// ======================================================
-// UPDATE INSURANCE DETAILS
-// ======================================================
-
 const updateInsurance = async (
     insuranceId,
     insuranceData
 ) => {
-
     const {
         insurance_type,
         insurance_company,
         policy_number,
-        expiry_date
+        expiry_date,
+        policy_path
     } = insuranceData;
 
-    try {
+    const includesPolicyPath = Object.hasOwn(
+        insuranceData,
+        "policy_path"
+    );
 
+    try {
         const [result] = await db.query(
             `UPDATE insurance
              SET insurance_type = ?,
                  insurance_company = ?,
                  policy_number = ?,
-                 expiry_date = ?
+                 expiry_date = ?${includesPolicyPath ? ",\n                 policy_path = ?" : ""}
              WHERE id = ?`,
             [
                 insurance_type,
                 insurance_company,
                 policy_number,
                 expiry_date,
+                ...(includesPolicyPath ? [policy_path] : []),
                 insuranceId
             ]
         );
 
         return result;
-
     } catch (error) {
-
         if (error.code === "ER_DUP_ENTRY") {
             error.statusCode = 409;
             error.message =
@@ -185,7 +175,6 @@ const updateInsurance = async (
 // ======================================================
 
 const getInsuranceById = async (insuranceId) => {
-
     const [rows] = await db.query(
         `SELECT *
          FROM insurance
@@ -201,11 +190,21 @@ const getInsuranceById = async (insuranceId) => {
 // ======================================================
 
 const deleteInsuranceById = async (insuranceId) => {
-
     const [result] = await db.query(
         `DELETE FROM insurance
          WHERE id = ?`,
         [insuranceId]
+    );
+
+    return result;
+};
+
+const updateInsurancePolicyPath = async (insuranceId, policyPath) => {
+    const [result] = await db.query(
+        `UPDATE insurance
+         SET policy_path = ?
+         WHERE id = ?`,
+        [policyPath, insuranceId]
     );
 
     return result;
@@ -216,28 +215,23 @@ const deleteInsuranceById = async (insuranceId) => {
 // ======================================================
 
 const getAllActiveInsurance = async (userId) => {
-
     const [rows] = await db.query(
         `SELECT
             v.id AS vehicle_id,
             v.vehicle_number,
             v.vehicle_name,
-
             i.id AS insurance_id,
             i.insurance_company,
             i.insurance_type,
             i.policy_number,
             i.expiry_date,
-            i.status
-
+            i.status,
+            i.policy_path
         FROM vehicles v
-
         INNER JOIN insurance i
             ON v.id = i.vehicle_id
-
         WHERE v.user_id = ?
         AND i.status = 'active'
-
         ORDER BY
             v.id,
             i.expiry_date DESC`,
@@ -260,5 +254,6 @@ module.exports = {
     updateInsuranceStatus,
     deletePreviousInsurance,
     deleteInsuranceById,
+    updateInsurancePolicyPath,
     getAllActiveInsurance
 };

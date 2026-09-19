@@ -7,7 +7,7 @@ function Button({
   className = "",
 }) {
   const baseClasses =
-    "w-full rounded-2xl px-4 py-3 font-semibold transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
+    "w-full cursor-pointer rounded-2xl px-4 py-3 font-semibold transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
 
   const variants = {
     primary:

@@ -13,7 +13,10 @@ import {
   Plus,
 } from "lucide-react";
 
-import { getInsuranceByVehicleId } from "../../services/insurance.service";
+import {
+  getInsuranceByVehicleId,
+  getInsurancePolicyDocument,
+} from "../../services/insurance.service";
 import { getVehicles } from "../../services/vehicle.service";
 import { useToast } from "../../context/ToastContext";
 
@@ -28,6 +31,17 @@ function InsuranceDetails() {
   const [previousPolicies, setPreviousPolicies] = useState([]);
 
   const [loading, setLoading] = useState(true);
+
+  const handleViewPolicy = async (insuranceId) => {
+    try {
+      const document = await getInsurancePolicyDocument(insuranceId);
+      const documentUrl = URL.createObjectURL(document);
+      window.open(documentUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(documentUrl), 60000);
+    } catch (error) {
+      showToast(error.response?.data?.message || "Failed to open policy document", "error");
+    }
+  };
 
   // ======================================================
   // FETCH VEHICLE + INSURANCE DETAILS
@@ -336,7 +350,7 @@ function InsuranceDetails() {
                       type="button"
                       onClick={() =>
                         navigate(
-                          `/insurance/edit/${policy.id}`
+                          `/insurance/edit/${vehicleId}?policy=${policy.id}`
                         )
                       }
                       className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-gray-400 transition hover:bg-emerald-50 hover:text-emerald-600"
@@ -368,6 +382,22 @@ function InsuranceDetails() {
 
                     </div>
 
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-gray-500">
+                      <FileText size={17} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-400">Policy Document</p>
+                      {policy.policy_path ? (
+                        <button type="button" onClick={() => handleViewPolicy(policy.id)} className="max-w-full cursor-pointer truncate text-sm font-medium text-emerald-700 hover:text-emerald-800">
+                          {policy.policy_name || "View Policy"}
+                        </button>
+                      ) : (
+                        <p className="text-sm text-gray-400">No policy document uploaded.</p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-3">

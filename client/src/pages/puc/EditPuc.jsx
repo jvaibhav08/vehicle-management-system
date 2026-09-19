@@ -4,7 +4,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   FileCheck,
+  FileText,
   Lock,
+  Trash2,
 } from "lucide-react";
 
 import { useToast } from "../../context/ToastContext";
@@ -12,7 +14,11 @@ import { useToast } from "../../context/ToastContext";
 import {
   getPucById,
   updatePuc,
+  deletePucDocument,
 } from "../../services/puc.service";
+
+const MAX_DOCUMENT_SIZE = 5 * 1024 * 1024;
+const allowedDocumentExtensions = [".pdf", ".doc", ".docx"];
 
 function EditPuc() {
   const navigate = useNavigate();
@@ -31,6 +37,10 @@ function EditPuc() {
   });
 
   const [errors, setErrors] = useState({});
+  const [document, setDocument] = useState(null);
+  const [hasDocument, setHasDocument] = useState(false);
+  const [documentName, setDocumentName] = useState("");
+  const [isDeletingDocument, setIsDeletingDocument] = useState(false);
 
   // ======================================================
   // FETCH PUC
@@ -70,6 +80,9 @@ function EditPuc() {
                 .split("T")[0]
             : "",
         });
+
+        setHasDocument(Boolean(puc.document_path));
+        setDocumentName(puc.document_name || "Current document");
 
       } catch (error) {
         console.error(error);
@@ -112,6 +125,60 @@ function EditPuc() {
     }));
   };
 
+  const handleDocumentChange = (e) => {
+    const selectedDocument = e.target.files?.[0] || null;
+
+    if (!selectedDocument) {
+      setDocument(null);
+      return;
+    }
+
+    const extension = `.${selectedDocument.name.split(".").pop()?.toLowerCase()}`;
+
+    if (!allowedDocumentExtensions.includes(extension)) {
+      setErrors((previous) => ({
+        ...previous,
+        document: "Upload a PDF, DOC, or DOCX document",
+      }));
+      e.target.value = "";
+      return;
+    }
+
+    if (selectedDocument.size > MAX_DOCUMENT_SIZE) {
+      setErrors((previous) => ({
+        ...previous,
+        document: "Document must be 5 MB or smaller",
+      }));
+      e.target.value = "";
+      return;
+    }
+
+    setDocument(selectedDocument);
+    setErrors((previous) => ({ ...previous, document: "" }));
+  };
+
+  const handleDeleteDocument = async () => {
+    try {
+      setIsDeletingDocument(true);
+
+      const response = await deletePucDocument(pucId);
+
+      if (response.success) {
+        setHasDocument(false);
+        setDocument(null);
+        setDocumentName("");
+        showToast(response.message, "success");
+      }
+    } catch (error) {
+      showToast(
+        error.response?.data?.message || "Failed to delete PUC document",
+        "error"
+      );
+    } finally {
+      setIsDeletingDocument(false);
+    }
+  };
+
   // ======================================================
   // SUBMIT
   // ======================================================
@@ -145,16 +212,15 @@ function EditPuc() {
     try {
       setIsSubmitting(true);
 
-      const response = await updatePuc(
-        pucId,
-        {
-          certificate_number:
-            formData.certificate_number.trim(),
+      const submission = new FormData();
+      submission.append("certificate_number", formData.certificate_number.trim());
+      submission.append("expiry_date", formData.expiry_date);
 
-          expiry_date:
-            formData.expiry_date,
-        }
-      );
+      if (document) {
+        submission.append("document", document);
+      }
+
+      const response = await updatePuc(pucId, submission);
 
       if (response.success) {
         showToast(
@@ -267,7 +333,7 @@ function EditPuc() {
 
         <form
           onSubmit={handleSubmit}
-          className="space-y-6"
+          className="grid grid-cols-1 gap-6 md:grid-cols-2"
         >
 
           {/* Vehicle */}
@@ -307,6 +373,52 @@ function EditPuc() {
             <p className="mt-2 text-xs text-gray-400">
               Vehicle cannot be changed while editing a PUC.
             </p>
+
+          </div>
+
+          {/* Document */}
+
+          <div>
+
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              PUC Document <span className="text-gray-400">(Optional)</span>
+            </label>
+
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600 transition hover:border-emerald-400 hover:bg-emerald-50/50">
+              <FileText size={20} className="text-emerald-600" />
+              <span className="min-w-0 flex-1 truncate">
+                {document
+                  ? document.name
+                  : hasDocument
+                    ? `${documentName} — choose a file to re-upload`
+                    : "Choose PDF, DOC, or DOCX (max 5 MB)"}
+              </span>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={handleDocumentChange}
+                disabled={isSubmitting || isDeletingDocument}
+                className="sr-only"
+              />
+            </label>
+
+            {hasDocument && !document && (
+              <button
+                type="button"
+                onClick={handleDeleteDocument}
+                disabled={isDeletingDocument || isSubmitting}
+                className="mt-3 flex cursor-pointer items-center gap-2 text-xs font-semibold text-red-500 transition hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Trash2 size={15} />
+                {isDeletingDocument ? "Deleting document..." : "Delete document"}
+              </button>
+            )}
+
+            {errors.document && (
+              <p className="mt-2 text-xs text-red-500">
+                {errors.document}
+              </p>
+            )}
 
           </div>
 
@@ -369,7 +481,7 @@ function EditPuc() {
 
           {/* Actions */}
 
-          <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-6">
+          <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-6 md:col-span-2">
 
             <button
               type="button"

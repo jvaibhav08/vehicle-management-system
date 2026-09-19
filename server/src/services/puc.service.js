@@ -1,8 +1,80 @@
 const pucModel = require("../models/puc.model");
 const vehicleModel = require("../models/vehicle.model");
 const AppError = require("../utils/AppError");
+const fs = require("fs");
+const path = require("path");
+const { UPLOAD_ROOT } = require("../middleware/pucDocument.middleware");
 
-const addPuc = async (pucData, userId) => {
+const getDocumentPath = (puc) =>
+    puc.document_path || puc.certificate_file || null;
+
+const getDocumentName = (documentPath) => {
+    if (!documentPath) {
+        return null;
+    }
+
+    const fileName = path.basename(documentPath);
+    const separatorIndex = fileName.indexOf("--");
+
+    return separatorIndex >= 0
+        ? fileName.slice(separatorIndex + 2)
+        : fileName;
+};
+
+const withDocumentMetadata = (puc) => {
+    const documentPath = getDocumentPath(puc);
+
+    return {
+        ...puc,
+        document_path: documentPath,
+        document_name: getDocumentName(documentPath)
+    };
+};
+
+const verifyDocumentReference = async (pucId, documentPath) => {
+    if (!documentPath) {
+        return;
+    }
+
+    const savedPuc = await pucModel.getPucById(pucId);
+
+    if (!savedPuc || getDocumentPath(savedPuc) !== documentPath) {
+        throw new AppError("Failed to save PUC document", 500);
+    }
+};
+
+const verifyStoredDocument = async (documentPath) => {
+    if (!documentPath) {
+        return;
+    }
+
+    const absolutePath = path.resolve(UPLOAD_ROOT, "..", documentPath);
+    const uploadBase = path.resolve(UPLOAD_ROOT, "..");
+
+    if (!absolutePath.startsWith(`${uploadBase}${path.sep}`)) {
+        throw new AppError("Invalid PUC document path", 400);
+    }
+
+    try {
+        await fs.promises.access(absolutePath, fs.constants.R_OK);
+    } catch (error) {
+        throw new AppError("PUC document could not be stored", 500);
+    }
+};
+
+const addPuc = async (pucData, userId, documentPath) => {
+
+    if (
+        documentPath &&
+        !(await pucModel.hasDocumentPathColumn())
+    ) {
+        throw new AppError(
+            "PUC document storage requires the document_path database migration",
+            400
+        );
+    }
+
+    await verifyStoredDocument(documentPath);
 
     const {
         vehicle_id,
@@ -70,11 +142,21 @@ const addPuc = async (pucData, userId) => {
 
     // No existing PUC = first-time PUC
     if (!existingPuc) {
-        const result = await pucModel.addPuc(pucData);
+        const result = await pucModel.addPuc({
+            ...pucData,
+            document_path: documentPath || null
+        });
+
+        if (result.affectedRows === 0) {
+            throw new AppError("Failed to save PUC certificate", 500);
+        }
+
+        await verifyDocumentReference(result.insertId, documentPath);
 
         return {
             action: "created",
-            result
+            result,
+            puc: withDocumentMetadata(await pucModel.getPucById(result.insertId))
         };
     }
 
@@ -98,14 +180,26 @@ const addPuc = async (pucData, userId) => {
     }
 
     // Valid renewal
+    const renewalData = {
+        ...pucData,
+        ...(documentPath ? { document_path: documentPath } : {})
+    };
+
     const result = await pucModel.updatePuc(
         vehicleId,
-        pucData
+        renewalData
     );
+
+    await verifyDocumentReference(existingPuc.id, documentPath);
+
+    if (documentPath) {
+        await removeDocument(getDocumentPath(existingPuc));
+    }
 
     return {
         action: "renewed",
-        result
+        result,
+        puc: withDocumentMetadata(await pucModel.getPucById(existingPuc.id))
     };
 };
 
@@ -135,7 +229,7 @@ const getPuc = async (vehicleId, userId) => {
     const pucStatus = getPucStatus(puc.expiry_date);
 
     return {
-        ...puc,
+        ...withDocumentMetadata(puc),
         ...pucStatus
     };
 };
@@ -196,7 +290,7 @@ const getPucById = async (
     // --------------------------------------------------
 
     return {
-        ...puc,
+        ...withDocumentMetadata(puc),
         ...pucStatus
     };
 };
@@ -208,8 +302,21 @@ const getPucById = async (
 const updatePuc = async (
     pucId,
     pucData,
-    userId
+    userId,
+    documentPath
 ) => {
+
+    if (
+        documentPath &&
+        !(await pucModel.hasDocumentPathColumn())
+    ) {
+        throw new AppError(
+            "PUC document storage requires the document_path database migration",
+            400
+        );
+    }
+
+    await verifyStoredDocument(documentPath);
 
     // --------------------------------------------------
     // 1. Find existing PUC
@@ -304,6 +411,14 @@ const updatePuc = async (
         expiry_date
     };
 
+    const shouldDeleteDocument = pucData.deleteDocument === "true";
+
+    if (documentPath) {
+        updatedPuc.document_path = documentPath;
+    } else if (shouldDeleteDocument) {
+        updatedPuc.document_path = null;
+    }
+
 
     // --------------------------------------------------
     // 7. Update PUC
@@ -314,9 +429,16 @@ const updatePuc = async (
         updatedPuc
     );
 
+    await verifyDocumentReference(pucId, documentPath);
+
+    if (documentPath || shouldDeleteDocument) {
+        await removeDocument(getDocumentPath(puc));
+    }
+
     return {
         action: "updated",
-        result
+        result,
+        puc: withDocumentMetadata(await pucModel.getPucById(pucId))
     };
 };
 
@@ -328,7 +450,7 @@ const getAllPuc = async (userId) => {
         if (!puc.expiry_date){
 
             return {
-                ...puc,
+                ...withDocumentMetadata(puc),
                 daysRemaining: null,
                 status: "no_puc"
             };
@@ -336,7 +458,7 @@ const getAllPuc = async (userId) => {
         const pucStatus = getPucStatus(puc.expiry_date);
 
         return {
-            ...puc,
+            ...withDocumentMetadata(puc),
             ...pucStatus
         };
     });
@@ -402,10 +524,83 @@ const getPucStatus = (expiryDate) => {
 
 }
 
+const getPucDocument = async (pucId, userId) => {
+
+    const puc = await getPucById(pucId, userId);
+
+    const documentPath = getDocumentPath(puc);
+
+    if (!documentPath) {
+        throw new AppError("PUC document not found", 404);
+    }
+
+    const absolutePath = path.resolve(UPLOAD_ROOT, "..", documentPath);
+    const uploadBase = path.resolve(UPLOAD_ROOT, "..");
+
+    if (!absolutePath.startsWith(`${uploadBase}${path.sep}`)) {
+        throw new AppError("PUC document not found", 404);
+    }
+
+    try {
+        await fs.promises.access(absolutePath, fs.constants.R_OK);
+    } catch (error) {
+        throw new AppError("PUC document not found", 404);
+    }
+
+    return {
+        absolutePath,
+        downloadName: `PUC-document${path.extname(documentPath)}`
+    };
+};
+
+const deletePucDocument = async (pucId, userId) => {
+
+    const puc = await getPucById(pucId, userId);
+
+    const documentPath = getDocumentPath(puc);
+
+    if (!documentPath) {
+        throw new AppError("PUC document not found", 404);
+    }
+
+    const result = await pucModel.updatePucById(pucId, {
+        certificate_number: puc.certificate_number,
+        expiry_date: puc.expiry_date,
+        document_path: null
+    });
+
+    if (result.affectedRows === 0) {
+        throw new AppError("Failed to delete PUC document", 500);
+    }
+
+    const savedPuc = await pucModel.getPucById(pucId);
+
+    if (getDocumentPath(savedPuc)) {
+        throw new AppError("Failed to delete PUC document", 500);
+    }
+
+    await removeDocument(documentPath);
+};
+
+const removeDocument = async (documentPath) => {
+    if (!documentPath) {
+        return;
+    }
+
+    const absolutePath = path.resolve(UPLOAD_ROOT, "..", documentPath);
+    const uploadBase = path.resolve(UPLOAD_ROOT, "..");
+
+    if (absolutePath.startsWith(`${uploadBase}${path.sep}`)) {
+        await fs.promises.unlink(absolutePath).catch(() => undefined);
+    }
+};
+
 module.exports = {
     addPuc,
     getPuc,
     getPucById,
     getAllPuc,
-    updatePuc
+    updatePuc,
+    getPucDocument,
+    deletePucDocument
 };

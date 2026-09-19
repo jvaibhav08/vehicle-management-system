@@ -29,3 +29,15 @@ export const updatePuc = async (pucId, pucData) => {
   const response = await api.put(`/puc/${pucId}`, pucData);
   return response.data;
 };
+
+export const getPucDocument = async (pucId) => {
+  const response = await api.get(`/puc/${pucId}/document`, {
+    responseType: "blob",
+  });
+  return response.data;
+};
+
+export const deletePucDocument = async (pucId) => {
+  const response = await api.delete(`/puc/${pucId}/document`);
+  return response.data;
+};

@@ -1,0 +1,3 @@
+"use client";
+import { FormEvent, useState } from "react";
+export function ContactForm(){const [sent,setSent]=useState(false);function submit(e:FormEvent){e.preventDefault();setSent(true)}return <form className="form card" onSubmit={submit} aria-label="Contact form">{sent?<div role="status"><h2>Thank you for reaching out.</h2><p>We’ve received your message. Email delivery will be connected in a future phase.</p></div>:<><label className="field">Name<input required name="name" autoComplete="name"/></label><label className="field">Email<input required name="email" type="email" autoComplete="email"/></label><label className="field">How can we help?<textarea required name="message" rows={6}/></label><button className="button" type="submit">Send message</button></>}</form>}

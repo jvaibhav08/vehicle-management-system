@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Lock,
   ShieldCheck,
+  FileText,
 } from "lucide-react";
 
 import { getVehicles } from "../../services/vehicle.service";
@@ -40,6 +41,7 @@ function AddInsurance() {
   });
 
   const [errors, setErrors] = useState({});
+  const [policyDocument, setPolicyDocument] = useState(null);
 
   // ======================================================
   // FETCH VEHICLES
@@ -152,6 +154,31 @@ function AddInsurance() {
     }));
   };
 
+  const handlePolicyDocumentChange = (e) => {
+    const document = e.target.files?.[0] || null;
+
+    if (!document) {
+      setPolicyDocument(null);
+      return;
+    }
+
+    const extension = `.${document.name.split(".").pop()?.toLowerCase()}`;
+    if (![".pdf", ".doc", ".docx"].includes(extension)) {
+      setErrors((previous) => ({ ...previous, document: "Upload a PDF, DOC, or DOCX document" }));
+      e.target.value = "";
+      return;
+    }
+
+    if (document.size > 5 * 1024 * 1024) {
+      setErrors((previous) => ({ ...previous, document: "Document must be 5 MB or smaller" }));
+      e.target.value = "";
+      return;
+    }
+
+    setPolicyDocument(document);
+    setErrors((previous) => ({ ...previous, document: "" }));
+  };
+
   // ======================================================
   // HANDLE SUBMIT
   // ======================================================
@@ -237,8 +264,14 @@ function AddInsurance() {
     try {
       setIsSubmitting(true);
 
-      const response =
-        await addInsurance(formData);
+      let submission = formData;
+      if (policyDocument) {
+        submission = new FormData();
+        Object.entries(formData).forEach(([key, value]) => submission.append(key, value));
+        submission.append("policy", policyDocument);
+      }
+
+      const response = await addInsurance(submission);
 
       if (response.success) {
         showToast(
@@ -448,6 +481,20 @@ function AddInsurance() {
                 </p>
               )}
 
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Policy Document <span className="text-gray-400">(Optional)</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600 transition hover:border-emerald-400 hover:bg-emerald-50/50">
+                <FileText size={20} className="text-emerald-600" />
+                <span className="min-w-0 flex-1 truncate">
+                  {policyDocument ? policyDocument.name : "Choose PDF, DOC, or DOCX (max 5 MB)"}
+                </span>
+                <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handlePolicyDocumentChange} disabled={isSubmitting} className="sr-only" />
+              </label>
+              {errors.document && <p className="mt-2 text-xs text-red-500">{errors.document}</p>}
             </div>
 
             {/* ==================================================

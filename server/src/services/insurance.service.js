@@ -1,7 +1,74 @@
+const fs = require("fs");
+const path = require("path");
+
 const insuranceModel = require("../models/insurance.model");
 const vehicleModel = require("../models/vehicle.model");
 const AppError = require("../utils/AppError");
 
+const {
+    UPLOAD_ROOT
+} = require("../middleware/insuranceDocument.middleware");
+
+const getPolicyDocumentName = (policyPath) => {
+    if (!policyPath) {
+        return null;
+    }
+
+    const fileName = path.basename(policyPath);
+    const separatorIndex = fileName.indexOf("--");
+
+    return separatorIndex >= 0
+        ? fileName.slice(separatorIndex + 2)
+        : fileName;
+};
+
+const withPolicyDocumentMetadata = (insurance) => ({
+    ...insurance,
+    policy_name: getPolicyDocumentName(insurance.policy_path)
+});
+
+const resolvePolicyDocumentPath = (policyPath) => {
+    const absolutePath = path.resolve(UPLOAD_ROOT, "..", policyPath);
+    const uploadBase = path.resolve(UPLOAD_ROOT, "..");
+
+    if (!absolutePath.startsWith(`${uploadBase}${path.sep}`)) {
+        throw new AppError("Insurance policy document not found", 404);
+    }
+
+    return absolutePath;
+};
+
+const verifyStoredPolicyDocument = async (policyPath) => {
+    if (!policyPath) {
+        return;
+    }
+
+    try {
+        await fs.promises.access(
+            resolvePolicyDocumentPath(policyPath),
+            fs.constants.R_OK
+        );
+    } catch (error) {
+        if (error instanceof AppError) {
+            throw error;
+        }
+
+        throw new AppError("Insurance policy document could not be stored", 500);
+    }
+};
+
+const removePolicyDocument = async (policyPath) => {
+    if (!policyPath) {
+        return;
+    }
+
+    try {
+        await fs.promises.unlink(resolvePolicyDocumentPath(policyPath));
+    } catch (error) {
+        // The database reference has already been removed/replaced. A missing
+        // physical file is safe to ignore.
+    }
+};
 
 // ======================================================
 // HELPER 1: GET LATER POLICY
@@ -324,220 +391,200 @@ const recalculateInsuranceStatuses = async (vehicleId) => {
 // ADD INSURANCE
 // ======================================================
 
-const addInsurance = async (insuranceData, userId) => {
+const addInsurance = async (
+    insuranceData,
+    userId,
+    policyPath
+) => {
+    await verifyStoredPolicyDocument(policyPath);
 
-    // --------------------------------------------------
-    // 1. Extract insurance data from request
-    // --------------------------------------------------
+    const createInsurance = async () => insuranceModel.addInsurance(newInsurance);
 
-    const {
-        vehicle_id,
-        insurance_company,
-        policy_number,
-        expiry_date,
-        covers_own_damage,
-        covers_third_party
-    } = insuranceData;
+        // --------------------------------------------------
+        // 1. Extract insurance data from request
+        // --------------------------------------------------
 
-
-    // --------------------------------------------------
-    // 2. Validate required fields
-    // --------------------------------------------------
-
-    if (
-        !vehicle_id ||
-        !insurance_company ||
-        !policy_number ||
-        !expiry_date
-    ) {
-        throw new AppError(
-            "Vehicle ID, insurance company, policy number and expiry date are required",
-            400
-        );
-    }
+        const {
+            vehicle_id,
+            insurance_company,
+            policy_number,
+            expiry_date,
+            covers_own_damage,
+            covers_third_party
+        } = insuranceData;
 
 
-    // --------------------------------------------------
-    // 3. Validate coverage selections
-    // --------------------------------------------------
+        // --------------------------------------------------
+        // 2. Validate required fields
+        // --------------------------------------------------
 
-    // Coverage values must be actual booleans
-    if (
-        typeof covers_own_damage !== "boolean" ||
-        typeof covers_third_party !== "boolean"
-    ) {
-        throw new AppError(
-            "Insurance coverage selection is required",
-            400
-        );
-    }
-
-    // At least one coverage must be selected
-    if (!covers_own_damage && !covers_third_party) {
-        throw new AppError(
-            "At least one insurance coverage must be selected",
-            400
-        );
-    }
+        if (
+            !vehicle_id ||
+            !insurance_company ||
+            !policy_number ||
+            !expiry_date
+        ) {
+            throw new AppError(
+                "Vehicle ID, insurance company, policy number and expiry date are required",
+                400
+            );
+        }
 
 
-    // --------------------------------------------------
-    // 4. Derive insurance type
-    // --------------------------------------------------
+        // --------------------------------------------------
+        // 3. Validate coverage selections
+        // --------------------------------------------------
 
-    let insuranceType;
+        if (
+            typeof covers_own_damage !== "boolean" ||
+            typeof covers_third_party !== "boolean"
+        ) {
+            throw new AppError(
+                "Insurance coverage selection is required",
+                400
+            );
+        }
 
-    if (covers_own_damage && covers_third_party) {
-        insuranceType = "comprehensive";
-    }
-
-    if (covers_own_damage && !covers_third_party) {
-        insuranceType = "own_damage";
-    }
-
-    if (!covers_own_damage && covers_third_party) {
-        insuranceType = "third_party";
-    }
-
-
-    // --------------------------------------------------
-    // 5. Verify vehicle ownership
-    // --------------------------------------------------
-
-    const vehicle = await vehicleModel.getVehicle(
-        vehicle_id,
-        userId
-    );
-
-    if (!vehicle) {
-        throw new AppError(
-            "Vehicle not found",
-            404
-        );
-    }
+        if (!covers_own_damage && !covers_third_party) {
+            throw new AppError(
+                "At least one insurance coverage must be selected",
+                400
+            );
+        }
 
 
-    // --------------------------------------------------
-    // 6. Validate expiry date
-    // --------------------------------------------------
+        // --------------------------------------------------
+        // 4. Derive insurance type
+        // --------------------------------------------------
 
-    const expiryDate = new Date(expiry_date);
+        let insuranceType;
 
-    if (isNaN(expiryDate.getTime())) {
-        throw new AppError(
-            "Invalid insurance expiry date",
-            400
-        );
-    }
+        if (covers_own_damage && covers_third_party) {
+            insuranceType = "comprehensive";
+        }
 
-    // Get today's date without time
-    const now = new Date();
+        if (covers_own_damage && !covers_third_party) {
+            insuranceType = "own_damage";
+        }
 
-    const today = new Date(Date.UTC(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate()
-    ));
-
-    // Reject already expired insurance
-    if (expiryDate < today) {
-        throw new AppError(
-            "Insurance policy has already expired",
-            400
-        );
-    }
+        if (!covers_own_damage && covers_third_party) {
+            insuranceType = "third_party";
+        }
 
 
-    // --------------------------------------------------
-    // 7. Fetch existing active policies
-    // --------------------------------------------------
+        // --------------------------------------------------
+        // 5. Verify vehicle ownership
+        // --------------------------------------------------
 
-    const activePolicies =
-        await insuranceModel.getActiveInsuranceByVehicleId(
-            vehicle_id
+        const vehicle = await vehicleModel.getVehicle(
+            vehicle_id,
+            userId
         );
 
-
-    // --------------------------------------------------
-    // 8. Find latest active policies by type
-    // --------------------------------------------------
-
-    const activeOwnDamage = getLatestPolicyByType(
-        activePolicies,
-        "own_damage"
-    );
-
-    const activeThirdParty = getLatestPolicyByType(
-        activePolicies,
-        "third_party"
-    );
-
-    const activeComprehensive = getLatestPolicyByType(
-        activePolicies,
-        "comprehensive"
-    );
+        if (!vehicle) {
+            throw new AppError(
+                "Vehicle not found",
+                404
+            );
+        }
 
 
-    // --------------------------------------------------
-    // 9. Determine current effective coverage
-    // --------------------------------------------------
+        // --------------------------------------------------
+        // 6. Validate expiry date
+        // --------------------------------------------------
 
-    const effectiveOwnDamage = getLaterPolicy(
-        activeOwnDamage,
-        activeComprehensive
-    );
+        const expiryDate = new Date(expiry_date);
 
-    const effectiveThirdParty = getLaterPolicy(
-        activeThirdParty,
-        activeComprehensive
-    );
+        if (isNaN(expiryDate.getTime())) {
+            throw new AppError(
+                "Invalid insurance expiry date",
+                400
+            );
+        }
 
+        const now = new Date();
 
-    // --------------------------------------------------
-    // 10. Prepare DB-ready insurance object
-    // --------------------------------------------------
+        const today = new Date(Date.UTC(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate()
+        ));
 
-    const newInsurance = {
-        vehicle_id,
-        insurance_type: insuranceType,
-        insurance_company,
-        policy_number,
-        expiry_date,
-        status: "active"
-    };
-
-
-    // --------------------------------------------------
-    // 11. First insurance entry for vehicle
-    // --------------------------------------------------
-
-    if (activePolicies.length === 0) {
-
-        const result = await insuranceModel.addInsurance(
-            newInsurance
-        );
-
-        return {
-            action: "created",
-            result
-        };
-    }
+        if (expiryDate < today) {
+            throw new AppError(
+                "Insurance policy has already expired",
+                400
+            );
+        }
 
 
-    // ==================================================
-    // 12. HANDLE OWN DAMAGE
-    // ==================================================
+        // --------------------------------------------------
+        // 7. Fetch existing active policies
+        // --------------------------------------------------
 
-    if (insuranceType === "own_damage") {
-
-        // No existing effective Own Damage coverage
-        if (!effectiveOwnDamage) {
-
-            const result = await insuranceModel.addInsurance(
-                newInsurance
+        const activePolicies =
+            await insuranceModel.getActiveInsuranceByVehicleId(
+                vehicle_id
             );
 
-            await refreshInsuranceStatuses(vehicle_id);
+
+        // --------------------------------------------------
+        // 8. Find latest active policies by type
+        // --------------------------------------------------
+
+        const activeOwnDamage = getLatestPolicyByType(
+            activePolicies,
+            "own_damage"
+        );
+
+        const activeThirdParty = getLatestPolicyByType(
+            activePolicies,
+            "third_party"
+        );
+
+        const activeComprehensive = getLatestPolicyByType(
+            activePolicies,
+            "comprehensive"
+        );
+
+
+        // --------------------------------------------------
+        // 9. Determine current effective coverage
+        // --------------------------------------------------
+
+        const effectiveOwnDamage = getLaterPolicy(
+            activeOwnDamage,
+            activeComprehensive
+        );
+
+        const effectiveThirdParty = getLaterPolicy(
+            activeThirdParty,
+            activeComprehensive
+        );
+
+
+        // --------------------------------------------------
+        // 10. Prepare DB-ready insurance object
+        // --------------------------------------------------
+
+        const newInsurance = {
+            vehicle_id,
+            insurance_type: insuranceType,
+            insurance_company,
+            policy_number,
+            expiry_date,
+            status: "active",
+            policy_path: policyPath || null
+        };
+
+
+        // --------------------------------------------------
+        // 11. First insurance entry for vehicle
+        // --------------------------------------------------
+
+        if (activePolicies.length === 0) {
+
+            const result = await createInsurance();
 
             return {
                 action: "created",
@@ -546,201 +593,183 @@ const addInsurance = async (insuranceData, userId) => {
         }
 
 
-        // Existing effective OD expiry
-        const existingExpiryDate = new Date(
-            effectiveOwnDamage.expiry_date
-        );
+        // ==================================================
+        // 12. HANDLE OWN DAMAGE
+        // ==================================================
 
-        const existingExpiryUTC = new Date(Date.UTC(
-            existingExpiryDate.getFullYear(),
-            existingExpiryDate.getMonth(),
-            existingExpiryDate.getDate()
-        ));
+        if (insuranceType === "own_damage") {
 
+            if (!effectiveOwnDamage) {
 
-        // New OD must improve existing OD coverage
-        if (expiryDate <= existingExpiryUTC) {
-            throw new AppError(
-                "New Own Damage expiry date must be later than the existing coverage",
-                409
-            );
-        }
+                const result = await createInsurance();
+
+                await refreshInsuranceStatuses(vehicle_id);
+
+                return {
+                    action: "created",
+                    result
+                };
+            }
 
 
-        // Insert new OD as active
-        const result = await insuranceModel.addInsurance(
-            newInsurance
-        );
-
-
-        // Recalculate useful policies
-        await refreshInsuranceStatuses(
-            vehicle_id
-        );
-
-
-        return {
-            action: "renewed",
-            result
-        };
-    }
-
-
-    // ==================================================
-    // 13. HANDLE THIRD PARTY
-    // ==================================================
-
-    if (insuranceType === "third_party") {
-
-        // No existing effective Third Party coverage
-        if (!effectiveThirdParty) {
-
-            const result = await insuranceModel.addInsurance(
-                newInsurance
-            );
-
-            await refreshInsuranceStatuses(vehicle_id);
-
-            return {
-                action: "created",
-                result
-            };
-        }
-
-
-        // Existing effective TP expiry
-        const existingExpiryDate = new Date(
-            effectiveThirdParty.expiry_date
-        );
-
-        const existingExpiryUTC = new Date(Date.UTC(
-            existingExpiryDate.getFullYear(),
-            existingExpiryDate.getMonth(),
-            existingExpiryDate.getDate()
-        ));
-
-
-        // New TP must improve existing TP coverage
-        if (expiryDate <= existingExpiryUTC) {
-            throw new AppError(
-                "New Third Party expiry date must be later than the existing coverage",
-                409
-            );
-        }
-
-
-        // Insert new TP as active
-        const result = await insuranceModel.addInsurance(
-            newInsurance
-        );
-
-
-        // Recalculate useful policies
-        await refreshInsuranceStatuses(
-            vehicle_id
-        );
-
-
-        return {
-            action: "renewed",
-            result
-        };
-    }
-
-
-    // ==================================================
-    // 14. HANDLE COMPREHENSIVE
-    // ==================================================
-
-    if (insuranceType === "comprehensive") {
-
-        let improvesOwnDamage = false;
-        let improvesThirdParty = false;
-
-
-        // ----------------------------------------------
-        // Check whether Comprehensive improves OD
-        // ----------------------------------------------
-
-        if (!effectiveOwnDamage) {
-
-            improvesOwnDamage = true;
-
-        } else {
-
-            const existingOwnDamageExpiry = new Date(
+            const existingExpiryDate = new Date(
                 effectiveOwnDamage.expiry_date
             );
 
-            const existingOwnDamageExpiryUTC = new Date(Date.UTC(
-                existingOwnDamageExpiry.getFullYear(),
-                existingOwnDamageExpiry.getMonth(),
-                existingOwnDamageExpiry.getDate()
+            const existingExpiryUTC = new Date(Date.UTC(
+                existingExpiryDate.getFullYear(),
+                existingExpiryDate.getMonth(),
+                existingExpiryDate.getDate()
             ));
 
-            if (expiryDate > existingOwnDamageExpiryUTC) {
-                improvesOwnDamage = true;
+
+            if (expiryDate <= existingExpiryUTC) {
+                throw new AppError(
+                    "New Own Damage expiry date must be later than the existing coverage",
+                    409
+                );
             }
+
+
+            const result = await createInsurance();
+
+            await refreshInsuranceStatuses(
+                vehicle_id
+            );
+
+            return {
+                action: "renewed",
+                result
+            };
         }
 
 
-        // ----------------------------------------------
-        // Check whether Comprehensive improves TP
-        // ----------------------------------------------
+        // ==================================================
+        // 13. HANDLE THIRD PARTY
+        // ==================================================
 
-        if (!effectiveThirdParty) {
+        if (insuranceType === "third_party") {
 
-            improvesThirdParty = true;
+            if (!effectiveThirdParty) {
 
-        } else {
+                const result = await createInsurance();
 
-            const existingThirdPartyExpiry = new Date(
+                await refreshInsuranceStatuses(vehicle_id);
+
+                return {
+                    action: "created",
+                    result
+                };
+            }
+
+
+            const existingExpiryDate = new Date(
                 effectiveThirdParty.expiry_date
             );
 
-            const existingThirdPartyExpiryUTC = new Date(Date.UTC(
-                existingThirdPartyExpiry.getFullYear(),
-                existingThirdPartyExpiry.getMonth(),
-                existingThirdPartyExpiry.getDate()
+            const existingExpiryUTC = new Date(Date.UTC(
+                existingExpiryDate.getFullYear(),
+                existingExpiryDate.getMonth(),
+                existingExpiryDate.getDate()
             ));
 
-            if (expiryDate > existingThirdPartyExpiryUTC) {
-                improvesThirdParty = true;
+
+            if (expiryDate <= existingExpiryUTC) {
+                throw new AppError(
+                    "New Third Party expiry date must be later than the existing coverage",
+                    409
+                );
             }
-        }
 
 
-        // ----------------------------------------------
-        // Comprehensive must improve at least one side
-        // ----------------------------------------------
+            const result = await createInsurance();
 
-        if (!improvesOwnDamage && !improvesThirdParty) {
-            throw new AppError(
-                "Comprehensive policy does not improve existing insurance coverage",
-                409
+            await refreshInsuranceStatuses(
+                vehicle_id
             );
+
+            return {
+                action: "renewed",
+                result
+            };
         }
 
 
-        // Insert new Comprehensive as active
-        const result = await insuranceModel.addInsurance(
-            newInsurance
-        );
+        // ==================================================
+        // 14. HANDLE COMPREHENSIVE
+        // ==================================================
+
+        if (insuranceType === "comprehensive") {
+
+            let improvesOwnDamage = false;
+            let improvesThirdParty = false;
 
 
-        // Recalculate useful policies
-        await refreshInsuranceStatuses(
-            vehicle_id
-        );
+            if (!effectiveOwnDamage) {
+
+                improvesOwnDamage = true;
+
+            } else {
+
+                const existingOwnDamageExpiry = new Date(
+                    effectiveOwnDamage.expiry_date
+                );
+
+                const existingOwnDamageExpiryUTC = new Date(Date.UTC(
+                    existingOwnDamageExpiry.getFullYear(),
+                    existingOwnDamageExpiry.getMonth(),
+                    existingOwnDamageExpiry.getDate()
+                ));
+
+                if (expiryDate > existingOwnDamageExpiryUTC) {
+                    improvesOwnDamage = true;
+                }
+            }
 
 
-        return {
-            action: "created",
-            result
-        };
-    }
+            if (!effectiveThirdParty) {
+
+                improvesThirdParty = true;
+
+            } else {
+
+                const existingThirdPartyExpiry = new Date(
+                    effectiveThirdParty.expiry_date
+                );
+
+                const existingThirdPartyExpiryUTC = new Date(Date.UTC(
+                    existingThirdPartyExpiry.getFullYear(),
+                    existingThirdPartyExpiry.getMonth(),
+                    existingThirdPartyExpiry.getDate()
+                ));
+
+                if (expiryDate > existingThirdPartyExpiryUTC) {
+                    improvesThirdParty = true;
+                }
+            }
+
+
+            if (!improvesOwnDamage && !improvesThirdParty) {
+                throw new AppError(
+                    "Comprehensive policy does not improve existing insurance coverage",
+                    409
+                );
+            }
+
+
+            const result = await createInsurance();
+
+            await refreshInsuranceStatuses(
+                vehicle_id
+            );
+
+            return {
+                action: "created",
+                result
+            };
+        }
+
 };
-
 // ======================================================
 // GET INSURANCE BY VEHICLE
 // ======================================================
@@ -792,8 +821,8 @@ const getInsuranceByVehicleId = async (vehicleId, userId) => {
     // --------------------------------------------------
 
     return {
-        active: activePolicies,
-        previous: previousPolicies
+        active: activePolicies.map(withPolicyDocumentMetadata),
+        previous: previousPolicies.map(withPolicyDocumentMetadata)
     };
 };
 
@@ -844,7 +873,7 @@ const getInsuranceById = async (
     // 3. Return insurance policy
     // --------------------------------------------------
 
-    return insurance;
+    return withPolicyDocumentMetadata(insurance);
 };
 
 
@@ -1061,14 +1090,159 @@ const getAllActiveInsurance = async (userId) => {
             userId
         );
 
-    return policies;
+    return policies.map(withPolicyDocumentMetadata);
 };
 
+const getInsurancePolicyDocument = async (
+    insuranceId,
+    userId
+) => {
+
+    // --------------------------------------------------
+    // 1. Find insurance policy
+    // --------------------------------------------------
+
+    const insurance = await insuranceModel.getInsuranceById(
+        insuranceId
+    );
+
+    if (!insurance) {
+        throw new AppError(
+            "Insurance policy not found",
+            404
+        );
+    }
+
+
+    // --------------------------------------------------
+    // 2. Verify vehicle ownership
+    // --------------------------------------------------
+
+    const vehicle = await vehicleModel.getVehicle(
+        insurance.vehicle_id,
+        userId
+    );
+
+    if (!vehicle) {
+        throw new AppError(
+            "Insurance policy not found",
+            404
+        );
+    }
+
+
+    // --------------------------------------------------
+    // 3. Check policy document
+    // --------------------------------------------------
+
+    const policyPath = insurance.policy_path;
+
+    if (!policyPath) {
+        throw new AppError(
+            "Insurance policy document not found",
+            404
+        );
+    }
+
+
+    // --------------------------------------------------
+    // 4. Resolve private file path safely
+    // --------------------------------------------------
+
+    const absolutePath = resolvePolicyDocumentPath(policyPath);
+
+
+    // --------------------------------------------------
+    // 6. Verify physical file exists
+    // --------------------------------------------------
+
+    try {
+        await fs.promises.access(
+            absolutePath,
+            fs.constants.R_OK
+        );
+    } catch (error) {
+        throw new AppError(
+            "Insurance policy document not found",
+            404
+        );
+    }
+
+
+    // --------------------------------------------------
+    // 7. Return file information
+    // --------------------------------------------------
+
+    return {
+        absolutePath,
+        downloadName: `Insurance-policy${path.extname(policyPath)}`
+    };
+};
+
+const replaceInsurancePolicyDocument = async (
+    insuranceId,
+    userId,
+    policyPath
+) => {
+    if (!policyPath) {
+        throw new AppError("Insurance policy document is required", 400);
+    }
+
+    await verifyStoredPolicyDocument(policyPath);
+
+    const insurance = await getInsuranceById(insuranceId, userId);
+    const result = await insuranceModel.updateInsurancePolicyPath(
+        insuranceId,
+        policyPath
+    );
+
+    if (result.affectedRows === 0) {
+        throw new AppError("Failed to save insurance policy document", 500);
+    }
+
+    const savedInsurance = await insuranceModel.getInsuranceById(insuranceId);
+
+    if (!savedInsurance || savedInsurance.policy_path !== policyPath) {
+        throw new AppError("Failed to save insurance policy document", 500);
+    }
+
+    await removePolicyDocument(insurance.policy_path);
+
+    return withPolicyDocumentMetadata(savedInsurance);
+};
+
+const deleteInsurancePolicyDocument = async (insuranceId, userId) => {
+    const insurance = await getInsuranceById(insuranceId, userId);
+
+    if (!insurance.policy_path) {
+        throw new AppError("Insurance policy document not found", 404);
+    }
+
+    const result = await insuranceModel.updateInsurancePolicyPath(
+        insuranceId,
+        null
+    );
+
+    if (result.affectedRows === 0) {
+        throw new AppError("Failed to delete insurance policy document", 500);
+    }
+
+    const savedInsurance = await insuranceModel.getInsuranceById(insuranceId);
+
+    if (savedInsurance?.policy_path) {
+        throw new AppError("Failed to delete insurance policy document", 500);
+    }
+
+    await removePolicyDocument(insurance.policy_path);
+};
 
 module.exports = {
     addInsurance,
     getInsuranceByVehicleId,
     getInsuranceById,
     updateInsurance,
-    getAllActiveInsurance
+    getAllActiveInsurance,
+    getInsurancePolicyDocument,
+    replaceInsurancePolicyDocument,
+    deleteInsurancePolicyDocument
 };

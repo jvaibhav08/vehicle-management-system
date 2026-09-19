@@ -1,0 +1,1 @@
+import Link from "next/link";export default function NotFound(){return <main className="article" style={{textAlign:"center"}}><span className="eyebrow">404</span><h1>That route has moved on.</h1><p className="lead" style={{margin:"0 auto 28px"}}>The page you’re looking for isn’t available.</p><Link className="button" href="/">Back to home</Link></main>}

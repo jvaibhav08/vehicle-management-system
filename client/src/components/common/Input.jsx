@@ -65,7 +65,7 @@ const Input = forwardRef(
             <button
               type="button"
               onClick={() => setShowPassword((prev) => !prev)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 transition hover:text-emerald-600"
+              className="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer text-gray-400 transition hover:text-emerald-600 active:scale-95"
             >
               {showPassword ? (
                 <EyeOff size={20} />

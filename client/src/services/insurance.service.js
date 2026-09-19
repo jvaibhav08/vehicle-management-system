@@ -63,3 +63,22 @@ export const updateInsurance = async (
 
   return response.data;
 };
+
+export const getInsurancePolicyDocument = async (insuranceId) => {
+  const response = await api.get(`/insurance/policy/${insuranceId}/document`, {
+    responseType: "blob",
+  });
+  return response.data;
+};
+
+export const replaceInsurancePolicyDocument = async (insuranceId, document) => {
+  const submission = new FormData();
+  submission.append("policy", document);
+  const response = await api.put(`/insurance/policy/${insuranceId}/document`, submission);
+  return response.data;
+};
+
+export const deleteInsurancePolicyDocument = async (insuranceId) => {
+  const response = await api.delete(`/insurance/policy/${insuranceId}/document`);
+  return response.data;
+};

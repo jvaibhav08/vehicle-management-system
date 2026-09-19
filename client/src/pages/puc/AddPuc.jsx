@@ -8,13 +8,17 @@ import {
   ArrowLeft,
   Car,
   FileCheck,
+  FileText,
   Lock,
 } from "lucide-react";
 
 import { getVehicles } from "../../services/vehicle.service";
 import VehicleSelect from "../../components/common/VehicleSelect";
 import { useToast } from "../../context/ToastContext";
-import api from "../../api/axios";
+import { addPuc } from "../../services/puc.service";
+
+const MAX_DOCUMENT_SIZE = 5 * 1024 * 1024;
+const allowedDocumentExtensions = [".pdf", ".doc", ".docx"];
 
 function AddPuc() {
   const navigate = useNavigate();
@@ -44,6 +48,7 @@ function AddPuc() {
   });
 
   const [errors, setErrors] = useState({});
+  const [document, setDocument] = useState(null);
 
   // ======================================================
   // FETCH VEHICLES
@@ -130,6 +135,38 @@ function AddPuc() {
     }));
   };
 
+  const handleDocumentChange = (e) => {
+    const selectedDocument = e.target.files?.[0] || null;
+
+    if (!selectedDocument) {
+      setDocument(null);
+      return;
+    }
+
+    const extension = `.${selectedDocument.name.split(".").pop()?.toLowerCase()}`;
+
+    if (!allowedDocumentExtensions.includes(extension)) {
+      setErrors((previous) => ({
+        ...previous,
+        document: "Upload a PDF, DOC, or DOCX document",
+      }));
+      e.target.value = "";
+      return;
+    }
+
+    if (selectedDocument.size > MAX_DOCUMENT_SIZE) {
+      setErrors((previous) => ({
+        ...previous,
+        document: "Document must be 5 MB or smaller",
+      }));
+      e.target.value = "";
+      return;
+    }
+
+    setDocument(selectedDocument);
+    setErrors((previous) => ({ ...previous, document: "" }));
+  };
+
   // ======================================================
   // HANDLE SUBMIT
   // ======================================================
@@ -172,14 +209,20 @@ function AddPuc() {
     try {
       setIsSubmitting(true);
 
-      const response = await api.post(
-        "/puc",
-        formData
-      );
+      const submission = new FormData();
+      submission.append("vehicle_id", formData.vehicle_id);
+      submission.append("certificate_number", formData.certificate_number.trim());
+      submission.append("expiry_date", formData.expiry_date);
 
-      if (response.data.success) {
+      if (document) {
+        submission.append("document", document);
+      }
+
+      const response = await addPuc(submission);
+
+      if (response.success) {
         showToast(
-          response.data.message ||
+          response.message ||
             "PUC certificate added successfully",
           "success"
         );
@@ -267,7 +310,7 @@ function AddPuc() {
 
         <form
           onSubmit={handleSubmit}
-          className="space-y-6"
+          className="grid grid-cols-1 gap-6 md:grid-cols-2"
         >
 
           {/* ==================================================
@@ -348,6 +391,36 @@ function AddPuc() {
 
           </div>
 
+          {/* Optional Document */}
+
+          <div>
+
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              PUC Document <span className="text-gray-400">(Optional)</span>
+            </label>
+
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600 transition hover:border-emerald-400 hover:bg-emerald-50/50">
+              <FileText size={20} className="text-emerald-600" />
+              <span className="min-w-0 flex-1 truncate">
+                {document ? document.name : "Choose PDF, DOC, or DOCX (max 5 MB)"}
+              </span>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={handleDocumentChange}
+                disabled={isSubmitting}
+                className="sr-only"
+              />
+            </label>
+
+            {errors.document && (
+              <p className="mt-2 text-xs text-red-500">
+                {errors.document}
+              </p>
+            )}
+
+          </div>
+
           {/* ==================================================
               CERTIFICATE NUMBER
           ================================================== */}
@@ -417,7 +490,7 @@ function AddPuc() {
               ACTIONS
           ================================================== */}
 
-          <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-6">
+          <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-6 md:col-span-2">
 
             <button
               type="button"

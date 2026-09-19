@@ -9,6 +9,11 @@ node_modules/
 # Logs
 *.log
 
+# Private uploaded documents
+server/uploads/
+
 # OS files
 .DS_Store
 Thumbs.db
+
+.next/

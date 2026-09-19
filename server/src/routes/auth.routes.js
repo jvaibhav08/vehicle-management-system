@@ -1,22 +1,50 @@
 const express = require("express");
-const { authenticateUser } = require("../middleware/auth.middleware");
+
+const router = express.Router();
 
 const {
     registerUser,
     loginUser
 } = require("../controllers/auth.controller");
+const {
+    loginRateLimit,
+    registrationRateLimit
+} = require("../middleware/authRateLimit.middleware");
+const {
+    validateRegistration,
+    validateLogin,
+    validateNoQueryParameters
+} = require("../middleware/requestValidation.middleware");
 
-const router = express.Router();
 
-router.post("/register", registerUser);
-router.post("/login", loginUser);
+// ======================================================
+// REGISTER USER
+// ======================================================
 
-router.get("/profile",authenticateUser, (req, res) => {
-    res.json({
-        success: true,
-        message: "Profile accessed successfully",
-        user: req.user
-    });
+router.post(
+    "/register",
+    registrationRateLimit,
+    validateNoQueryParameters,
+    validateRegistration,
+    registerUser
+);
 
-});
+
+// ======================================================
+// LOGIN USER
+// ======================================================
+
+router.post(
+    "/login",
+    loginRateLimit,
+    validateNoQueryParameters,
+    validateLogin,
+    loginUser
+);
+
+
+// ======================================================
+// EXPORT ROUTER
+// ======================================================
+
 module.exports = router;

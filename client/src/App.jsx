@@ -13,9 +13,9 @@ import AddVehicle from "./pages/Vehicles/AddVehicle";
 import EditVehicle from "./pages/Vehicles/EditVehicle";
 
 import PUC from "./pages/puc/PUC";
-import AddPuc from "./pages/PUC/AddPuc";
-import EditPuc from "./pages/PUC/EditPuc";
-import PucDetails from "./pages/PUC/PucDetails";
+import AddPuc from "./pages/puc/AddPuc";
+import EditPuc from "./pages/puc/EditPuc";
+import PucDetails from "./pages/puc/PucDetails";
 
 import Insurance from "./pages/Insurance/Insurance";
 import AddInsurance from "./pages/Insurance/AddInsurance";

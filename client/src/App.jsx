@@ -12,7 +12,7 @@ import Vehicles from "./pages/Vehicles/Vehicles";
 import AddVehicle from "./pages/Vehicles/AddVehicle";
 import EditVehicle from "./pages/Vehicles/EditVehicle";
 
-import PUC from "./pages/PUC/PUC";
+import PUC from "./pages/puc/PUC";
 import AddPuc from "./pages/PUC/AddPuc";
 import EditPuc from "./pages/PUC/EditPuc";
 import PucDetails from "./pages/PUC/PucDetails";
